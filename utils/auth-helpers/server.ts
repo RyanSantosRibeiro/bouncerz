@@ -68,6 +68,7 @@ export async function signInWithEmail(formData: FormData) {
       error.message
     );
   } else if (data) {
+    // @ts-ignore
     cookieStore.set('preferredSignInView', 'email_signin', { path: '/' });
     redirectPath = getStatusRedirect(
       '/signin/email_signin',
