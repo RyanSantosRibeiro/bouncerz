@@ -1,7 +1,16 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Stage, Layer, Circle, Rect, Group, Text, Image, Line } from "react-konva";
+import {
+  Stage,
+  Layer,
+  Circle,
+  Rect,
+  Group,
+  Text,
+  Image,
+  Line,
+} from "react-konva";
 import Matter from "matter-js";
 import Modal from "../Modal/Modal";
 import WalletConnect from "../Wallet";
@@ -9,33 +18,7 @@ import Interface from "../Interface";
 import { useWallet } from "../../../context/WalletContext";
 import useImage from "use-image";
 import { createClient } from "../../../utils/supabase/client";
-
-  const defaultMaps = [
-  {
-    platforms: [
-      // Base central inferior (chão)
-      { x: -400, y: 290, width: 800, height: 20, color: "#6c4f3d" },
-
-      // Plataforma baixa à esquerda
-      { x: -300, y: 200, width: 120, height: 20, color: "#3d6c49" },
-
-      // Plataforma baixa à direita
-      { x: 200, y: 200, width: 120, height: 20, color: "#3d6c49" },
-
-      // Plataforma média central
-      { x: 0, y: 100, width: 180, height: 20, color: "#3d6c49" },
-
-      // Plataforma alta à esquerda
-      { x: -250, y: -50, width: 100, height: 20, color: "#3d6c49" },
-
-      // Plataforma alta à direita
-      { x: 250, y: -50, width: 100, height: 20, color: "#3d6c49" },
-
-      // Plataforma topo centro
-      { x: 0, y: -150, width: 150, height: 20, color: "#3d6c49" },
-    ],
-  },
-];
+import defaultMaps from "../../../utils/maps";
 
 
 export default function Game() {
@@ -45,7 +28,6 @@ export default function Game() {
     height: window?.innerHeight,
   });
   const [playerPos, setPlayerPos] = useState({ x: 100, y: 100 });
-  const [opponentPos, setOpponentPos] = useState([]);
   const platformBodies = useRef([]);
   const { user, match } = useWallet();
 
@@ -53,33 +35,32 @@ export default function Game() {
     Matter.Engine.create({
       gravity: {
         x: 0,
-        y: 0.45,
+        y: 0.4,
       },
     })
   );
   const playerRef = useRef();
+  const fps = useRef(0);
   const opponentBodies = useRef({});
   const lastMoveSent = useRef(null);
   const keys = useRef({});
   const isJumping = useRef(false);
   const velocityX = useRef(0);
   const velocityY = useRef(0);
-  const maxSpeed = 3;
-  const accel = 0.05;
+  const maxSpeed = 2;
+  const accel = 0.03;
   const friction = 0.02;
-  const frictionAirPlayer = 0.08;
+  const frictionAirPlayer = 0.02;
   const canJump = useRef(false);
   const [profileImg] = useImage(user?.profile?.image);
   // Chão centralizado com 50% da largura
-  const groundWidth = dimensions.width / 2;
+  const groundWidth = dimensions?.width / 2;
   const groundHeight = 80;
-
-  useEffect(() => {
-    console.log({ opponentPos });
-  }, [opponentPos]);
+  
 
   // Cria Coneção
   useEffect(() => {
+    console.log("Criando Conexão")
     if (!match) return;
     const channel = supabase.channel(`match-${match.hash}`, {
       config: {
@@ -91,7 +72,7 @@ export default function Game() {
 
     channel
       .on("broadcast", { event: "moves" }, ({ payload }) => {
-        if (!payload?.userId || !payload?.move) return;
+        if (!payload?.userId || !payload?.move || payload.id == user.id) return;
 
         // 🔧 Cria o body do oponente se ainda não existir
         if (!opponentBodies.current[payload.userId]) {
@@ -110,22 +91,24 @@ export default function Game() {
 
         // 🔁 Sincroniza a posição do body com os dados recebidos
         const opponentBody = opponentBodies.current[payload.userId];
-        Matter.Body.setPosition(opponentBody, {
-          x: payload.move.x,
-          y: payload.move.y,
-        });
+        const dx = payload.move.x - opponentBody.position.x;
+        const dy = payload.move.y - opponentBody.position.y;
+        const newX = opponentBody.position.x + dx;
+        const newY = opponentBody.position.y + dy;
+        const newMove = {
+          x: newX,
+          y: newY,
+        }
+        // Engine Update
+        Matter.Body.setVelocity(opponentBody, newMove);
 
-        // 🎯 Atualiza o estado visual (nome, etc.)
-        setOpponentPos((prev) => {
-          const exists = prev.some((op) => op.userId === payload.userId);
-          if (exists) {
-            return prev.map((op) =>
-              op.userId === payload.userId ? { ...op, move: payload.move } : op
-            );
-          } else {
-            return [...prev, { userId: payload.userId, move: payload.move }];
-          }
-        });
+        // Data Update
+        opponentBodies.current[payload.userId] = {
+          ...opponentBodies.current[payload.userId],
+          move: newMove
+        };
+        console.log({opponentBodies: opponentBodies.current})
+        
       })
       .subscribe();
 
@@ -135,8 +118,11 @@ export default function Game() {
   }, [match]);
 
   useEffect(() => {
+    console.log("Iniciando")
     const updateSize = () => {
-      setDimensions({ width: window?.innerWidth, height: window?.innerHeight });
+      if(dimensions.width == 0 && dimensions.height == 0) {
+        setDimensions({ width: window?.innerWidth, height: window?.innerHeight });
+      }
     };
     window.addEventListener("resize", updateSize);
 
@@ -196,6 +182,7 @@ export default function Game() {
     Matter.Runner.run(runner, engine.current);
 
     const update = () => {
+
       // Verifica se o jogador caiu abaixo do chão
       if (player.position.y > dimensions.height + 20) {
         console.log("💀 Player morreu");
@@ -205,35 +192,32 @@ export default function Game() {
       }
       const { x, y } = player.position;
       setPlayerPos({ x, y });
-      // sendMove({
-      //   x: player.position.x,
-      //   y: player.position.y,
-      //   vx: player.velocity.x,
-      //   vy: player.velocity.y,
-      // });
+      playerPos.current = { x, y };
+
 
       const currentMove = {
-        userId: user?.id,
-        x: player.position.x,
-        y: player.position.y,
+        x: x,
+        y: y,
         vx: player.velocity.x,
         vy: player.velocity.y,
       };
+      sendMove(currentMove);
 
-      const last = lastMoveSent.current;
+      // const last = lastMoveSent.current;
 
       // Manda só se mudou o suficiente
-      const positionChanged =
-        Math.abs(currentMove.x - last?.x) > 1 ||
-        Math.abs(currentMove.y - last?.y) > 1;
-      const velocityChanged =
-        Math.abs(currentMove.vx - last?.vx) > 0.2 ||
-        Math.abs(currentMove.vy - last?.vy) > 0.2;
+      // const positionChanged =
+      //   Math.abs(currentMove.x - last?.x) > 1 ;
+      //   // || Math.abs(currentMove.y - last?.y) > 1;
 
-      if (!last || positionChanged || velocityChanged) {
-        sendMove(currentMove);
-        lastMoveSent.current = currentMove;
-      }
+      // const velocityChanged =
+      //   Math.abs(currentMove.vx - last?.vx) > 0.2 ||
+      //   Math.abs(currentMove.vy - last?.vy) > 0.2;
+        
+      //   if (!last || positionChanged || velocityChanged) {
+      //   sendMove(currentMove);
+      //   lastMoveSent.current = currentMove;
+      // }
 
       // Aplicar aceleração lateral
       if (keys.current["ArrowLeft"] || keys.current["KeyA"]) {
@@ -257,9 +241,9 @@ export default function Game() {
         velocityY.current = Math.max(velocityY.current + 0.002, +0.1);
       } else if (
         isAirborne &&
-        (keys.current["ArrowUp"] || keys.current["KeyW"])
+        (keys.current["ArrowUp"] || keys.current["KeyW"]  || keys.current["Space"])
       ) {
-        velocityY.current = Math.max(velocityY.current - 0.02, -0.1); // quase sem resistência no ar (queda rápida)
+        velocityY.current = Math.max(velocityY.current - 0.005, -0.08); // quase sem resistência no ar (queda rápida)
       } else {
         velocityY.current = 0;
       }
@@ -273,16 +257,14 @@ export default function Game() {
       requestAnimationFrame(update);
     };
 
+    console.log("Chamando update")
     update();
 
     const handleKeyDown = (e) => {
       keys.current[e.code] = true;
 
-      if ((e.code === "ArrowUp" || e.code === "KeyW") && canJump.current) {
-        Matter.Body.setVelocity(playerRef.current, {
-          x: playerRef.current.velocity.x,
-          y: -14.5, // suaviza o salto
-        });
+      if ((e.code === "ArrowUp" || e.code === "KeyW" || e.code === "Space") && canJump.current) {
+        Matter.Body.applyForce(playerRef.current, playerRef.current.position, { x: 0, y: -0.025 });
         canJump.current = false; // bloqueia novo salto até nova colisão
       }
     };
@@ -313,6 +295,7 @@ export default function Game() {
     });
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    
 
     return () => {
       Matter.World.clear(world);
@@ -321,7 +304,7 @@ export default function Game() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [dimensions, user, match]);
+  }, [user, match]);
 
   const sendMove = async (move) => {
     if (!match) return;
@@ -370,43 +353,42 @@ export default function Game() {
   };
 
   const DebugGrid = ({ width = 800, height = 600, spacing = 100 }) => {
-  const lines = [];
+    const lines = [];
 
-  // Linhas verticais
-  for (let x = -width; x <= width; x += spacing) {
-    lines.push(
-      <Line
-        key={`v-${x}`}
-        points={[x, -height, x, height]}
-        stroke="#333"
-        strokeWidth={0.5}
-        dash={[4, 4]}
-      />
-    );
-  }
+    // Linhas verticais
+    for (let x = -width; x <= width; x += spacing) {
+      lines.push(
+        <Line
+          key={`v-${x}`}
+          points={[x, -height, x, height]}
+          stroke="#333"
+          strokeWidth={0.5}
+          dash={[4, 4]}
+        />
+      );
+    }
 
-  // Linhas horizontais
-  for (let y = -height; y <= height; y += spacing) {
-    lines.push(
-      <Line
-        key={`h-${y}`}
-        points={[-width, y, width, y]}
-        stroke="#333"
-        strokeWidth={0.5}
-        dash={[4, 4]}
-      />
-    );
-  }
+    // Linhas horizontais
+    for (let y = -height; y <= height; y += spacing) {
+      lines.push(
+        <Line
+          key={`h-${y}`}
+          points={[-width, y, width, y]}
+          stroke="#333"
+          strokeWidth={0.5}
+          dash={[4, 4]}
+        />
+      );
+    }
 
-  // Linha do eixo central (x e y)
-  // lines.push(
-  //   <Line key="x-axis" points={[-width, 0, width, 0]} stroke="red" strokeWidth={1} />,
-  //   <Line key="y-axis" points={[0, -height, 0, height]} stroke="red" strokeWidth={1} />
-  // );
+    // Linha do eixo central (x e y)
+    // lines.push(
+    //   <Line key="x-axis" points={[-width, 0, width, 0]} stroke="red" strokeWidth={1} />,
+    //   <Line key="y-axis" points={[0, -height, 0, height]} stroke="red" strokeWidth={1} />
+    // );
 
-  return <>{lines}</>;
-};
-
+    return <>{lines}</>;
+  };
 
   return (
     <div className="w-full h-full flex justify-center items-center">
@@ -422,15 +404,15 @@ export default function Game() {
           {/* Jogador */}
           <Group x={playerPos.x} y={playerPos.y}>
             {/* Imagem redonda com Circle (colide) */}
-            {user && user?.profile?.image != null ? (
+            {user && user?.profile?.image != null && profileImg ? (
               <Circle
                 x={0}
                 y={0}
                 radius={20}
                 fillPatternImage={profileImg}
                 fillPatternScale={{
-                  x: 40 / profileImg.width,
-                  y: 40 / profileImg.height,
+                  x: 40 / profileImg?.width,
+                  y: 40 / profileImg?.height,
                 }}
                 fillPatternOffset={{
                   x: profileImg.width / 2,
@@ -454,51 +436,50 @@ export default function Game() {
             />
           </Group>
           {/* Oponene */}
-          {opponentPos.map(({ move, userId, name = "", image }, i) => {
+          {Object.entries(opponentBodies.current).map(([userId, body]) => {
+            const x = body.position.x;
+            const y = body.position.y;
+            const name = body.name || "";
+            const image = body.image || null;
+
             return (
-              <Group key={userId || i} x={move.x} y={move.y}>
-                {/* Imagem redonda com Circle (colide) */}
+              <Group key={userId} x={x} y={y}>
                 <DynamicImageComponent imageUrl={image} />
-                {/* Texto visual flutuando em cima */}
                 <Text
                   text={name}
                   fontSize={12}
                   fill="white"
-                  y={-40} // sobe 30px acima do centro do círculo
+                  y={-40}
                   x={-20}
                   width={40}
                   align="center"
-                  listening={false} // evita interação com mouse
+                  listening={false}
                 />
               </Group>
             );
           })}
           {/* Plataformas desenhadas */}
-          {
-          
-          match ? match?.map?.platforms?.map((p, i) => (
-            <Rect
-              key={i}
-              x={p.x}
-              y={p.y}
-              width={p.width}
-              height={p.height}
-              fill={p.color}
-            />
-          ))
-          :
-          defaultMaps[0]?.platforms?.map((p, i) => (
-            <Rect
-              key={i}
-              x={p.x}
-              y={p.y}
-              width={p.width}
-              height={p.height}
-              fill={p.color}
-            />
-          ))
-          
-          }
+          {match
+            ? match?.map?.platforms?.map((p, i) => (
+                <Rect
+                  key={i}
+                  x={p.x}
+                  y={p.y}
+                  width={p.width}
+                  height={p.height}
+                  fill={p.color}
+                />
+              ))
+            : defaultMaps[0]?.platforms?.map((p, i) => (
+                <Rect
+                  key={i}
+                  x={p.x}
+                  y={p.y}
+                  width={p.width}
+                  height={p.height}
+                  fill={p.color}
+                />
+              ))}
         </Layer>
       </Stage>
     </div>
