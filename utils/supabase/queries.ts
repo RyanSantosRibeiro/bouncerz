@@ -31,18 +31,6 @@ export const getProducts = cache(async (supabase: SupabaseClient) => {
   return products;
 });
 
-export const getMatch = cache(async (supabase: SupabaseClient) => {
-  const { data: match, error } = await supabase
-    .from('matches')
-    .select(`*,
-      white_player:profile!white_player_id(*),
-      black_player:profile!black_player_id(*)`
-    )
-    .eq('url_hash', "vemr")
-    .single()
-  return  match
-;
-});
 
 export const getUserDetails = cache(async (supabase: SupabaseClient) => {
   const { data: profile } = await supabase
@@ -155,9 +143,27 @@ export const saveWallet = async (payload: any) => {
     } 
 }
 
-export const sendTicket = async (payload: any) => {
+export const getMatch = async (payload: any) => {
   try {
-      const response = await fetch(`/api/ticket`, {
+      const response = await fetch(`/api/match`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+
+      return result.data;
+    } catch (error: any) {
+      return error;
+    } 
+}
+
+export const startMatch = async (payload: any) => {
+  console.log({payload})
+  try {
+      const response = await fetch(`/api/match`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

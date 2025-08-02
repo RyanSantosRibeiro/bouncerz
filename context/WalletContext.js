@@ -10,6 +10,7 @@ import {
 import { getUserByWallet } from '../utils/supabase/queries';
 import { checkWalletConnection } from '../services/WalletsProviders/Unisat';
 import { fromSatoshis } from '../utils/helpers';
+import { createClient } from '../utils/supabase/client';
 
 const WalletContext = createContext(undefined);
 
@@ -20,7 +21,9 @@ export function WalletProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [token, setToken] = useState(null);
+  const [match, setMatch] = useState(null);
   const [balance, setBalance] = useState(0);
+  
 
   useEffect(() => {
     const loadWalletFromStorage = async () => {
@@ -64,6 +67,7 @@ export function WalletProvider({ children }) {
       getUserInfo(walletData);
     }
   }, [walletData]);
+
 
   const getToken = async () => {
     // https://api.odin.fun/v1/tokens
@@ -171,6 +175,8 @@ export function WalletProvider({ children }) {
     setWalletData(null);
   };
 
+ 
+
   if (!isInitialized) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -181,7 +187,7 @@ export function WalletProvider({ children }) {
 
   return (
     <WalletContext.Provider
-      value={{ walletData, setWalletData, disconnectWallet, user, token , balance}}
+      value={{ walletData, setWalletData, disconnectWallet, user, token , balance, match, setMatch}}
     >
       {children}
     </WalletContext.Provider>

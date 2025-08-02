@@ -14,7 +14,7 @@ export default function WalletConnect() {
   };
 
   return (
-    <div className="p-6 max-w-md mx-auto bg-gray-900 rounded-lg">
+    <div className="p-6 max-w-md mx-auto">
       <div className="text-center mb-6">
         <h2 className="text-2xl font-bold text-white">
           Connect Wallet
@@ -50,7 +50,7 @@ export default function WalletConnect() {
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 cursor-pointer">
           <UnisatConnect 
             onAddressChange={handleAddressChange}
             onClose={() => {

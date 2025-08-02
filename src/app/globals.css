@@ -1,4 +1,5 @@
 @import "tailwindcss";
+
 @plugin "daisyui" {
   themes: night --default, dark --prefersdark;
 }
@@ -30,4 +31,141 @@ body {
 
 .modal-backdrop {
   backdrop-filter: blur(2px);
+}
+
+.card.discord {
+  overflow: visible;
+  width: 100%;
+  max-width: 200px;
+  height: 200px;
+  margin: 0px auto;
+}
+
+.hHGuuM .content {
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 300ms;
+  border: none;
+  border-radius: 5px;
+}
+
+.hHGuuM .back {
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.hHGuuM .front,
+.hHGuuM .back {
+  /* background-color: #0a1120; */
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+/* .hHGuuM .discord .back::before {
+  position: absolute;
+  content: " ";
+  display: block;
+  width: 160px;
+  height: 160%;
+  background: linear-gradient(90deg, transparent, rgb(88, 101, 242), rgb(88, 101, 242), rgb(88, 101, 242), transparent);
+  animation: 5000ms linear 0s infinite normal none running rotation_481;
+} */
+
+.hHGuuM .back-content {
+  position: absolute;
+  width: 99%;
+  height: 99%;
+  /* background-color: #0a1120; */
+  border-radius: 5px;
+  color: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 30px;
+}
+
+.hHGuuM .front {
+  transform: rotateY(180deg);
+  color: white;
+}
+
+.hHGuuM .front,
+.hHGuuM .back {
+  /* background-color: #0a1120; */
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.hHGuuM .front {
+  transform: rotateY(180deg);
+  color: white;
+}
+
+.hHGuuM .front,
+.hHGuuM .back {
+  background-color: #0a1120;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.hHGuuM .front .img {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.hHGuuM .front .front-content {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.hHGuuM .description {
+  box-shadow: #0c1425 0px 0px 10px 5px;
+  width: 100%;
+  padding: 1rem;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(5px);
+  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hHGuuM .card:hover .content {
+    transform: rotateY(180deg);
+}
+
+@keyframes rotation_481 {
+    0% {
+        transform: rotateZ(0deg);
+    }
+    100% {
+        transform: rotateZ(360deg);
+    }
 }
