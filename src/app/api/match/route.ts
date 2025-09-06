@@ -1,15 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClientAdmin } from "../../../../utils/supabase/client";
 
-const maps = [
-  {
-    platforms: [
-      { x: 100, y: 500, width: 200, height: 20 },
-      { x: 400, y: 400, width: 150, height: 20 },
-      { x: 650, y: 300, width: 100, height: 20 },
-    ],
-  },
-];
+import defaultMaps from '../../../../utils/maps'
 
 const generateMatchId = () =>
   Math.random().toString(36).substring(2, 6) +
@@ -86,14 +78,14 @@ export const GET = async () => {
     );
   }
 
-  const randomNumber = Math.floor(Math.random() * maps.length);
+  const randomNumber = Math.floor(Math.random() * defaultMaps.length);
 
   const { data: newMatchData, error: newMatchError } = await supabase
     .from("match")
     .insert({
       hash: generateMatchId(),
       status: "open",
-      map: maps[randomNumber]
+      map: defaultMaps[randomNumber]
     })
     .select();
 

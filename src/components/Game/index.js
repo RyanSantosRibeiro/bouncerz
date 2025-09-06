@@ -1,7 +1,16 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Stage, Layer, Circle, Rect, Group, Text, Image, Line } from "react-konva";
+import {
+  Stage,
+  Layer,
+  Circle,
+  Rect,
+  Group,
+  Text,
+  Image,
+  Line,
+} from "react-konva";
 import Matter from "matter-js";
 import Modal from "../Modal/Modal";
 import WalletConnect from "../Wallet";
@@ -10,7 +19,7 @@ import { useWallet } from "../../../context/WalletContext";
 import useImage from "use-image";
 import { createClient } from "../../../utils/supabase/client";
 
-  const defaultMaps = [
+const defaultMaps = [
   {
     platforms: [
       // Base central inferior (chão)
@@ -37,7 +46,6 @@ import { createClient } from "../../../utils/supabase/client";
   },
 ];
 
-
 export default function Game() {
   const supabase = createClient();
   const [dimensions, setDimensions] = useState({
@@ -45,7 +53,7 @@ export default function Game() {
     height: window?.innerHeight,
   });
   const [playerPos, setPlayerPos] = useState({ x: 100, y: 100 });
-  const [opponentPos, setOpponentPos] = useState([]);
+  const playerPosRef = useRef({ x: 100, y: 100 });
   const platformBodies = useRef([]);
   const { user, match } = useWallet();
 
@@ -53,19 +61,21 @@ export default function Game() {
     Matter.Engine.create({
       gravity: {
         x: 0,
-        y: 0.45,
+        y: 0.25,
       },
     })
   );
   const playerRef = useRef();
+  const [fps, forceRender] = useState(0);
   const opponentBodies = useRef({});
+  const opponentsMeta = useRef({});
   const lastMoveSent = useRef(null);
   const keys = useRef({});
   const isJumping = useRef(false);
   const velocityX = useRef(0);
   const velocityY = useRef(0);
-  const maxSpeed = 3;
-  const accel = 0.05;
+  const maxSpeed = 2;
+  const accel = 0.015;
   const friction = 0.02;
   const frictionAirPlayer = 0.08;
   const canJump = useRef(false);
@@ -73,10 +83,24 @@ export default function Game() {
   // Chão centralizado com 50% da largura
   const groundWidth = dimensions.width / 2;
   const groundHeight = 80;
+  const playerOptions = {
+    restitution: 0.1,
+    friction: 0.13,
+    frictionAir: frictionAirPlayer,
+  };
 
   useEffect(() => {
-    console.log({ opponentPos });
-  }, [opponentPos]);
+    const interval = setInterval(() => {
+      forceRender((n) => n + 1);
+    }, 1000 / 60); // ~30 FPS (ajuste como quiser)
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    console.log(velocityX.current)
+    sendMove();
+  }, [fps]);
 
   // Cria Coneção
   useEffect(() => {
@@ -91,7 +115,13 @@ export default function Game() {
 
     channel
       .on("broadcast", { event: "moves" }, ({ payload }) => {
-        if (!payload?.userId || !payload?.move) return;
+        if (!payload?.userId || !payload?.move || payload?.userId === user?.id)
+          return;
+
+        const { userId, move, name, image } = payload;
+
+        // Atualiza metadata
+        opponentsMeta.current[userId] = { name, image };
 
         // 🔧 Cria o body do oponente se ainda não existir
         if (!opponentBodies.current[payload.userId]) {
@@ -100,6 +130,7 @@ export default function Game() {
             payload.move.y,
             20,
             {
+              ...playerOptions,
               isStatic: false, // permite colisão
               label: "opponent_" + payload.userId,
             }
@@ -110,21 +141,11 @@ export default function Game() {
 
         // 🔁 Sincroniza a posição do body com os dados recebidos
         const opponentBody = opponentBodies.current[payload.userId];
-        Matter.Body.setPosition(opponentBody, {
-          x: payload.move.x,
-          y: payload.move.y,
-        });
-
-        // 🎯 Atualiza o estado visual (nome, etc.)
-        setOpponentPos((prev) => {
-          const exists = prev.some((op) => op.userId === payload.userId);
-          if (exists) {
-            return prev.map((op) =>
-              op.userId === payload.userId ? { ...op, move: payload.move } : op
-            );
-          } else {
-            return [...prev, { userId: payload.userId, move: payload.move }];
-          }
+        const dx = payload.move.x - opponentBody.position.x;
+        const dy = payload.move.y - opponentBody.position.y;
+        Matter.Body.setVelocity(opponentBody, {
+          x: dx * 0.4,
+          y: dy * 0.4,
         });
       })
       .subscribe();
@@ -143,9 +164,7 @@ export default function Game() {
     const world = engine.current.world;
 
     const player = Matter.Bodies.circle(100, 100, 20, {
-      restitution: 0.1,
-      friction: 0.13,
-      frictionAir: frictionAirPlayer,
+      ...playerOptions,
       label: "player",
     });
     playerRef.current = player;
@@ -204,36 +223,8 @@ export default function Game() {
         // Aqui você pode resetar, remover do mundo, mostrar game over, etc.
       }
       const { x, y } = player.position;
-      setPlayerPos({ x, y });
-      // sendMove({
-      //   x: player.position.x,
-      //   y: player.position.y,
-      //   vx: player.velocity.x,
-      //   vy: player.velocity.y,
-      // });
-
-      const currentMove = {
-        userId: user?.id,
-        x: player.position.x,
-        y: player.position.y,
-        vx: player.velocity.x,
-        vy: player.velocity.y,
-      };
-
-      const last = lastMoveSent.current;
-
-      // Manda só se mudou o suficiente
-      const positionChanged =
-        Math.abs(currentMove.x - last?.x) > 1 ||
-        Math.abs(currentMove.y - last?.y) > 1;
-      const velocityChanged =
-        Math.abs(currentMove.vx - last?.vx) > 0.2 ||
-        Math.abs(currentMove.vy - last?.vy) > 0.2;
-
-      if (!last || positionChanged || velocityChanged) {
-        sendMove(currentMove);
-        lastMoveSent.current = currentMove;
-      }
+      // setPlayerPos({ x, y });
+      playerPosRef.current = { x, y };
 
       // Aplicar aceleração lateral
       if (keys.current["ArrowLeft"] || keys.current["KeyA"]) {
@@ -259,7 +250,7 @@ export default function Game() {
         isAirborne &&
         (keys.current["ArrowUp"] || keys.current["KeyW"])
       ) {
-        velocityY.current = Math.max(velocityY.current - 0.02, -0.1); // quase sem resistência no ar (queda rápida)
+        velocityY.current = Math.max(velocityY.current - 0.014, -0.08); // quase sem resistência no ar (queda rápida)
       } else {
         velocityY.current = 0;
       }
@@ -323,8 +314,14 @@ export default function Game() {
     };
   }, [dimensions, user, match]);
 
-  const sendMove = async (move) => {
+  const sendMove = async () => {
     if (!match) return;
+    const move = {
+      userId: user?.id,
+      x: playerPosRef.current.x,
+      y: playerPosRef.current.y,
+    };
+
     const channel = supabase
       .getChannels()
       .find((c) => c.topic === `realtime:match-${match.hash}`);
@@ -347,7 +344,6 @@ export default function Game() {
     if (imageUrl == undefined || imageUrl == null) {
       return <Circle x={0} y={0} radius={20} fill="#3abdf8" />;
     }
-    console.log({ imageUrl });
     const [opponentImg] = useImage(imageUrl); // Load the image from the provided URL
 
     return (
@@ -358,55 +354,54 @@ export default function Game() {
         fill="blue"
         fillPatternImage={opponentImg}
         fillPatternScale={{
-          x: 40 / opponentImg.width,
-          y: 40 / opponentImg.height,
+          x: 40 / opponentImg?.width,
+          y: 40 / opponentImg?.height,
         }}
         fillPatternOffset={{
-          x: opponentImg.width / 2,
-          y: opponentImg.height / 2,
+          x: opponentImg?.width / 2,
+          y: opponentImg?.height / 2,
         }}
       />
     );
   };
 
   const DebugGrid = ({ width = 800, height = 600, spacing = 100 }) => {
-  const lines = [];
+    const lines = [];
 
-  // Linhas verticais
-  for (let x = -width; x <= width; x += spacing) {
-    lines.push(
-      <Line
-        key={`v-${x}`}
-        points={[x, -height, x, height]}
-        stroke="#333"
-        strokeWidth={0.5}
-        dash={[4, 4]}
-      />
-    );
-  }
+    // Linhas verticais
+    for (let x = -width; x <= width; x += spacing) {
+      lines.push(
+        <Line
+          key={`v-${x}`}
+          points={[x, -height, x, height]}
+          stroke="#333"
+          strokeWidth={0.5}
+          dash={[4, 4]}
+        />
+      );
+    }
 
-  // Linhas horizontais
-  for (let y = -height; y <= height; y += spacing) {
-    lines.push(
-      <Line
-        key={`h-${y}`}
-        points={[-width, y, width, y]}
-        stroke="#333"
-        strokeWidth={0.5}
-        dash={[4, 4]}
-      />
-    );
-  }
+    // Linhas horizontais
+    for (let y = -height; y <= height; y += spacing) {
+      lines.push(
+        <Line
+          key={`h-${y}`}
+          points={[-width, y, width, y]}
+          stroke="#333"
+          strokeWidth={0.5}
+          dash={[4, 4]}
+        />
+      );
+    }
 
-  // Linha do eixo central (x e y)
-  // lines.push(
-  //   <Line key="x-axis" points={[-width, 0, width, 0]} stroke="red" strokeWidth={1} />,
-  //   <Line key="y-axis" points={[0, -height, 0, height]} stroke="red" strokeWidth={1} />
-  // );
+    // Linha do eixo central (x e y)
+    // lines.push(
+    //   <Line key="x-axis" points={[-width, 0, width, 0]} stroke="red" strokeWidth={1} />,
+    //   <Line key="y-axis" points={[0, -height, 0, height]} stroke="red" strokeWidth={1} />
+    // );
 
-  return <>{lines}</>;
-};
-
+    return <>{lines}</>;
+  };
 
   return (
     <div className="w-full h-full flex justify-center items-center">
@@ -420,9 +415,9 @@ export default function Game() {
         <Layer offsetX={-dimensions.width / 2} offsetY={-dimensions.height / 2}>
           <DebugGrid width={1000} height={1000} spacing={100} />
           {/* Jogador */}
-          <Group x={playerPos.x} y={playerPos.y}>
+          <Group x={playerPosRef.current.x} y={playerPosRef.current.y}>
             {/* Imagem redonda com Circle (colide) */}
-            {user && user?.profile?.image != null ? (
+            {user && user?.profile?.image != null && profileImg ? (
               <Circle
                 x={0}
                 y={0}
@@ -454,51 +449,46 @@ export default function Game() {
             />
           </Group>
           {/* Oponene */}
-          {opponentPos.map(({ move, userId, name = "", image }, i) => {
+          {Object.entries(opponentBodies.current).map(([userId, body]) => {
+            const meta = opponentsMeta.current[userId] || {};
             return (
-              <Group key={userId || i} x={move.x} y={move.y}>
-                {/* Imagem redonda com Circle (colide) */}
-                <DynamicImageComponent imageUrl={image} />
-                {/* Texto visual flutuando em cima */}
+              <Group key={userId} x={body.position.x} y={body.position.y}>
+                <DynamicImageComponent imageUrl={meta.image} />
                 <Text
-                  text={name}
+                  text={meta.name}
                   fontSize={12}
                   fill="white"
-                  y={-40} // sobe 30px acima do centro do círculo
+                  y={-40}
                   x={-20}
                   width={40}
                   align="center"
-                  listening={false} // evita interação com mouse
+                  listening={false}
                 />
               </Group>
             );
           })}
           {/* Plataformas desenhadas */}
-          {
-          
-          match ? match?.map?.platforms?.map((p, i) => (
-            <Rect
-              key={i}
-              x={p.x}
-              y={p.y}
-              width={p.width}
-              height={p.height}
-              fill={p.color}
-            />
-          ))
-          :
-          defaultMaps[0]?.platforms?.map((p, i) => (
-            <Rect
-              key={i}
-              x={p.x}
-              y={p.y}
-              width={p.width}
-              height={p.height}
-              fill={p.color}
-            />
-          ))
-          
-          }
+          {match
+            ? match?.map?.platforms?.map((p, i) => (
+                <Rect
+                  key={i}
+                  x={p.x}
+                  y={p.y}
+                  width={p.width}
+                  height={p.height}
+                  fill={p.color}
+                />
+              ))
+            : defaultMaps[0]?.platforms?.map((p, i) => (
+                <Rect
+                  key={i}
+                  x={p.x}
+                  y={p.y}
+                  width={p.width}
+                  height={p.height}
+                  fill={p.color}
+                />
+              ))}
         </Layer>
       </Stage>
     </div>
