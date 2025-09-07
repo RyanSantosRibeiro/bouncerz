@@ -1,496 +1,281 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import {
-  Stage,
-  Layer,
-  Circle,
-  Rect,
-  Group,
-  Text,
-  Image,
-  Line,
-} from "react-konva";
-import Matter from "matter-js";
-import Modal from "../Modal/Modal";
-import WalletConnect from "../Wallet";
-import Interface from "../Interface";
-import { useWallet } from "../../../context/WalletContext";
-import useImage from "use-image";
-import { createClient } from "../../../utils/supabase/client";
+import { Application, extend, useTick } from "@pixi/react";
+import { Container, Graphics } from "pixi.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Engine, Runner, Bodies, Composite, Body, Events } from "matter-js";
+import { useWallet } from "./../../../context/WalletContext"; // ajuste para o caminho correto
 
-const defaultMaps = [
-  {
-    platforms: [
-      // Base central inferior (chão)
-      { x: -400, y: 290, width: 800, height: 20, color: "#6c4f3d" },
+extend({ Container, Graphics });
 
-      // Plataforma baixa à esquerda
-      { x: -300, y: 200, width: 120, height: 20, color: "#3d6c49" },
+function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck }) {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const engineRef = useRef(null);
+  const bodyRef = useRef(null);
+  const runnerRef = useRef(null);
+  const keysRef = useRef({});
+  const inputBufferRef = useRef([]);
+  const myPosRef = useRef({ x: 0, y: 0 }); 
+  const canJumpRef = useRef(false);
 
-      // Plataforma baixa à direita
-      { x: 200, y: 200, width: 120, height: 20, color: "#3d6c49" },
-
-      // Plataforma média central
-      { x: 0, y: 100, width: 180, height: 20, color: "#3d6c49" },
-
-      // Plataforma alta à esquerda
-      { x: -250, y: -50, width: 100, height: 20, color: "#3d6c49" },
-
-      // Plataforma alta à direita
-      { x: 250, y: -50, width: 100, height: 20, color: "#3d6c49" },
-
-      // Plataforma topo centro
-      { x: 0, y: -150, width: 150, height: 20, color: "#3d6c49" },
-    ],
-  },
-];
-
-export default function Game() {
-  const supabase = createClient();
-  const [dimensions, setDimensions] = useState({
-    width: window?.innerWidth,
-    height: window?.innerHeight,
-  });
-  const [playerPos, setPlayerPos] = useState({ x: 100, y: 100 });
-  const playerPosRef = useRef({ x: 100, y: 100 });
-  const platformBodies = useRef([]);
-  const { user, match } = useWallet();
-
-  const engine = useRef(
-    Matter.Engine.create({
-      gravity: {
-        x: 0,
-        y: 0.25,
-      },
-    })
-  );
-  const playerRef = useRef();
-  const [fps, forceRender] = useState(0);
-  const opponentBodies = useRef({});
-  const opponentsMeta = useRef({});
-  const lastMoveSent = useRef(null);
-  const keys = useRef({});
-  const isJumping = useRef(false);
-  const velocityX = useRef(0);
-  const velocityY = useRef(0);
-  const maxSpeed = 2;
-  const accel = 0.015;
-  const friction = 0.02;
-  const frictionAirPlayer = 0.08;
-  const canJump = useRef(false);
-  const [profileImg] = useImage(user?.profile?.image);
-  // Chão centralizado com 50% da largura
-  const groundWidth = dimensions.width / 2;
-  const groundHeight = 80;
-  const playerOptions = {
-    restitution: 0.1,
-    friction: 0.13,
-    frictionAir: frictionAirPlayer,
-  };
+  // REMOTE PLAYER
+  if (!isLocal) {
+    const draw = useCallback((g) => {
+      g.clear();
+      g.beginFill(0x40a0f0);
+      g.drawCircle(0, 0, 20);
+      g.endFill();
+    }, []);
+    return (
+      <pixiGraphics draw={draw} x={snapshot?.x ?? 0} y={snapshot?.y ?? 0} />
+    );
+  }
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      forceRender((n) => n + 1);
-    }, 1000 / 60); // ~30 FPS (ajuste como quiser)
-
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    console.log(velocityX.current)
-    sendMove();
-  }, [fps]);
-
-  // Cria Coneção
-  useEffect(() => {
-    if (!match) return;
-    const channel = supabase.channel(`match-${match.hash}`, {
-      config: {
-        broadcast: {
-          self: false,
-        },
-      },
-    });
-
-    channel
-      .on("broadcast", { event: "moves" }, ({ payload }) => {
-        if (!payload?.userId || !payload?.move || payload?.userId === user?.id)
-          return;
-
-        const { userId, move, name, image } = payload;
-
-        // Atualiza metadata
-        opponentsMeta.current[userId] = { name, image };
-
-        // 🔧 Cria o body do oponente se ainda não existir
-        if (!opponentBodies.current[payload.userId]) {
-          const body = Matter.Bodies.circle(
-            payload.move.x,
-            payload.move.y,
-            20,
-            {
-              ...playerOptions,
-              isStatic: false, // permite colisão
-              label: "opponent_" + payload.userId,
-            }
-          );
-          opponentBodies.current[payload.userId] = body;
-          Matter.World.add(engine.current.world, [body]);
-        }
-
-        // 🔁 Sincroniza a posição do body com os dados recebidos
-        const opponentBody = opponentBodies.current[payload.userId];
-        const dx = payload.move.x - opponentBody.position.x;
-        const dy = payload.move.y - opponentBody.position.y;
-        Matter.Body.setVelocity(opponentBody, {
-          x: dx * 0.4,
-          y: dy * 0.4,
-        });
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [match]);
-
-  useEffect(() => {
-    const updateSize = () => {
-      setDimensions({ width: window?.innerWidth, height: window?.innerHeight });
-    };
-    window.addEventListener("resize", updateSize);
-
-    const world = engine.current.world;
-
-    const player = Matter.Bodies.circle(100, 100, 20, {
-      ...playerOptions,
-      label: "player",
-    });
-    playerRef.current = player;
-
-    // Chão
-    const ground = Matter.Bodies.rectangle(
-      dimensions.width / 2, // centro horizontal
-      dimensions.height - groundHeight / 2, // parte de baixo
-      groundWidth,
-      groundHeight,
-      {
-        isStatic: true,
-        label: "ground",
-      }
+    const engine = Engine.create();
+    const runner = Runner.create();
+    const body = Bodies.circle(0, 0, 20, { restitution: 0, friction: 0.05 });
+    const platformBodies = map.map((p) =>
+      Bodies.rectangle(p.x, p.y, p.w, p.h, { isStatic: true })
     );
 
-    // Plataformas dinâmicas
-    const createdPlatforms = match?.map
-      ? match?.map?.platforms.map((p, i) => {
-          return Matter.Bodies.rectangle(
-            p.x + p.width / 2,
-            p.y + p.height / 2,
-            p.width,
-            p.height,
-            {
-              isStatic: true,
-              label: "platform_" + i,
-            }
-          );
-        })
-      : defaultMaps[0]?.platforms.map((p, i) => {
-          return Matter.Bodies.rectangle(
-            p.x + p.width / 2,
-            p.y + p.height / 2,
-            p.width,
-            p.height,
-            {
-              isStatic: true,
-              label: "platform_" + i,
-            }
-          );
-        });
-    platformBodies.current = createdPlatforms;
+    Composite.add(engine.world, [body, ...platformBodies]);
+    Runner.run(runner, engine);
 
-    Matter.World.add(world, [player, ground, ...createdPlatforms]);
+    engineRef.current = engine;
+    bodyRef.current = body;
+    runnerRef.current = runner;
 
-    const runner = Matter.Runner.create();
-    Matter.Runner.run(runner, engine.current);
-
-    const update = () => {
-      // Verifica se o jogador caiu abaixo do chão
-      if (player.position.y > dimensions.height + 20) {
-        console.log("💀 Player morreu");
-        Matter.Body.setPosition(player, { x: 100, y: 100 });
-        Matter.Body.setVelocity(player, { x: 0, y: 0 });
-        // Aqui você pode resetar, remover do mundo, mostrar game over, etc.
-      }
-      const { x, y } = player.position;
-      // setPlayerPos({ x, y });
-      playerPosRef.current = { x, y };
-
-      // Aplicar aceleração lateral
-      if (keys.current["ArrowLeft"] || keys.current["KeyA"]) {
-        velocityX.current = Math.max(velocityX.current - accel, -maxSpeed);
-      } else if (keys.current["ArrowRight"] || keys.current["KeyD"]) {
-        velocityX.current = Math.min(velocityX.current + accel, maxSpeed);
-      } else {
-        // Aplicar atrito para desacelerar
-        if (velocityX.current > 0) {
-          velocityX.current = Math.max(0, velocityX.current - friction);
-        } else if (velocityX.current < 0) {
-          velocityX.current = Math.min(0, velocityX.current + friction);
-        }
-      }
-
-      // Detecta se o jogador está no ar (acima do chão)
-      const isAirborne = playerRef.current.velocity.y !== 0;
-
-      // Pressionar ↓ (ou S) acelera a queda
-      if (isAirborne && (keys.current["ArrowDown"] || keys.current["KeyS"])) {
-        velocityY.current = Math.max(velocityY.current + 0.002, +0.1);
-      } else if (
-        isAirborne &&
-        (keys.current["ArrowUp"] || keys.current["KeyW"])
-      ) {
-        velocityY.current = Math.max(velocityY.current - 0.014, -0.08); // quase sem resistência no ar (queda rápida)
-      } else {
-        velocityY.current = 0;
-      }
-
-      // Aplicar velocidade horizontal
-      Matter.Body.setVelocity(player, {
-        x: velocityX.current,
-        y: player.velocity.y + velocityY.current,
-      });
-
-      requestAnimationFrame(update);
-    };
-
-    update();
-
-    const handleKeyDown = (e) => {
-      keys.current[e.code] = true;
-
-      if ((e.code === "ArrowUp" || e.code === "KeyW") && canJump.current) {
-        Matter.Body.setVelocity(playerRef.current, {
-          x: playerRef.current.velocity.x,
-          y: -14.5, // suaviza o salto
-        });
-        canJump.current = false; // bloqueia novo salto até nova colisão
-      }
-    };
-
-    const handleKeyUp = (e) => {
-      keys.current[e.code] = false;
-    };
-
-    Matter.Events.on(engine.current, "collisionStart", (event) => {
-      event.pairs.forEach((pair) => {
-        const labels = [pair.bodyA.label, pair.bodyB.label];
-
-        if (
-          labels.includes("player") &&
-          (labels.some((l) => l.startsWith("platform")) ||
-            labels.includes("ground"))
-        ) {
-          // Verifica se a colisão está por baixo do jogador (player está em cima da plataforma)
-          const playerBody =
-            pair.bodyA.label === "player" ? pair.bodyA : pair.bodyB;
-          const otherBody = playerBody === pair.bodyA ? pair.bodyB : pair.bodyA;
-
-          if (playerBody.position.y < otherBody.position.y) {
-            canJump.current = true;
+    Events.on(engine, "collisionStart", (e) => {
+      e.pairs.forEach((pair) => {
+        if (pair.bodyA === body || pair.bodyB === body) {
+          const other = pair.bodyA === body ? pair.bodyB : pair.bodyA;
+          if (other.isStatic && body.position.y < other.position.y) {
+            canJumpRef.current = true;
           }
         }
       });
     });
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
+
+    const down = (e) => (keysRef.current[e.key.toLowerCase()] = true);
+    const up = (e) => (keysRef.current[e.key.toLowerCase()] = false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
 
     return () => {
-      Matter.World.clear(world);
-      Matter.Engine.clear(engine.current);
-      window.removeEventListener("resize", updateSize);
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      Runner.stop(runner);
+      Engine.clear(engine);
     };
-  }, [dimensions, user, match]);
+  }, [map]);
 
-  const sendMove = async () => {
-    if (!match) return;
-    const move = {
-      userId: user?.id,
-      x: playerPosRef.current.x,
-      y: playerPosRef.current.y,
+  const applyInput = useCallback((body, input, canJump = false) => {
+    const force = 0.0008;
+    const jumpForce = -0.04;
+    if (input.keys.a) Body.applyForce(body, body.position, { x: -force, y: 0 });
+    if (input.keys.d) Body.applyForce(body, body.position, { x: force, y: 0 });
+    if (input.keys.w && canJump) {
+      Body.applyForce(body, body.position, { x: 0, y: jumpForce });
+    }
+  }, []);
+
+  useTick(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+
+    const now = Date.now();
+    const input = {
+      keys: {
+        a: keysRef.current["a"],
+        d: keysRef.current["d"],
+        w: keysRef.current["w"] && canJumpRef.current, // 🔒 aplica pulo só se permitido
+      },
+      timestamp: now,
     };
 
-    const channel = supabase
-      .getChannels()
-      .find((c) => c.topic === `realtime:match-${match.hash}`);
+    inputBufferRef.current.push(input);
+    applyInput(body, input, canJumpRef.current);
 
-    if (channel) {
-      await channel.send({
-        type: "broadcast",
-        event: "moves",
-        payload: {
-          userId: user.id,
-          name: user.profile.username,
-          image: user.profile.image,
-          move,
-        },
-      });
+    if (input.keys.w && canJumpRef.current) {
+      canJumpRef.current = false; // 🔁 reseta após aplicar pulo
     }
-  };
 
-  const DynamicImageComponent = ({ imageUrl }) => {
-    if (imageUrl == undefined || imageUrl == null) {
-      return <Circle x={0} y={0} radius={20} fill="#3abdf8" />;
+    ws?.send(JSON.stringify({ type: "input", ...input }));
+
+    const pos = body.position;
+    setPosition({ x: pos.x, y: pos.y });
+    myPosRef.current = { x: pos.x, y: pos.y };
+
+    if (Math.abs(pos.y) > 1000) {
+      Body.setPosition(body, { x: 0, y: 0 });
+      Body.setVelocity(body, { x: 0, y: 0 });
     }
-    const [opponentImg] = useImage(imageUrl); // Load the image from the provided URL
+  });
 
-    return (
-      <Circle
-        x={0}
-        y={0}
-        radius={20}
-        fill="blue"
-        fillPatternImage={opponentImg}
-        fillPatternScale={{
-          x: 40 / opponentImg?.width,
-          y: 40 / opponentImg?.height,
-        }}
-        fillPatternOffset={{
-          x: opponentImg?.width / 2,
-          y: opponentImg?.height / 2,
-        }}
-      />
+  useEffect(() => {
+    if (!snapshot || !bodyRef.current || lastAck == null) return;
+
+    // REPLAY usando snapshot + inputBuffer
+    const inputsToReplay = inputBufferRef.current.filter(
+      (input) => input.timestamp > lastAck
     );
-  };
 
-  const DebugGrid = ({ width = 800, height = 600, spacing = 100 }) => {
-    const lines = [];
+    const simEngine = Engine.create();
+    const clonedBody = Bodies.circle(snapshot.x, snapshot.y, 20, {
+      restitution: 0,
+      friction: 0.05,
+    });
 
-    // Linhas verticais
-    for (let x = -width; x <= width; x += spacing) {
-      lines.push(
-        <Line
-          key={`v-${x}`}
-          points={[x, -height, x, height]}
-          stroke="#333"
-          strokeWidth={0.5}
-          dash={[4, 4]}
-        />
-      );
+    const clonedPlatforms = map.map((p) =>
+      Bodies.rectangle(p.x, p.y, p.w, p.h, { isStatic: true })
+    );
+
+    Composite.add(simEngine.world, [clonedBody, ...clonedPlatforms]);
+
+    let simCanJump = false;
+    Events.on(simEngine, "collisionStart", (e) => {
+      e.pairs.forEach((pair) => {
+        if (pair.bodyA === clonedBody || pair.bodyB === clonedBody) {
+          const other = pair.bodyA === clonedBody ? pair.bodyB : pair.bodyA;
+          if (other.isStatic && clonedBody.position.y < other.position.y) {
+            simCanJump = true;
+          }
+        }
+      });
+    });
+
+    for (const input of inputsToReplay) {
+      applyInput(clonedBody, input, simCanJump);
+      simCanJump = false; // permite só um pulo por replay
+      Engine.update(simEngine, 1000 / 60);
     }
 
-    // Linhas horizontais
-    for (let y = -height; y <= height; y += spacing) {
-      lines.push(
-        <Line
-          key={`h-${y}`}
-          points={[-width, y, width, y]}
-          stroke="#333"
-          strokeWidth={0.5}
-          dash={[4, 4]}
-        />
-      );
-    }
+    Body.setPosition(bodyRef.current, clonedBody.position);
+    Body.setVelocity(bodyRef.current, clonedBody.velocity);
 
-    // Linha do eixo central (x e y)
-    // lines.push(
-    //   <Line key="x-axis" points={[-width, 0, width, 0]} stroke="red" strokeWidth={1} />,
-    //   <Line key="y-axis" points={[0, -height, 0, height]} stroke="red" strokeWidth={1} />
-    // );
+    setPosition({ x: clonedBody.position.x, y: clonedBody.position.y });
+    myPosRef.current = { x: clonedBody.position.x, y: clonedBody.position.y };
 
-    return <>{lines}</>;
-  };
+    inputBufferRef.current = inputsToReplay;
+  }, [snapshot, lastAck, applyInput, map]);
+
+  const draw = useCallback((g) => {
+    g.clear();
+    g.beginFill(0xb3e240);
+    g.drawCircle(0, 0, 20);
+    g.endFill();
+  }, []);
+
+  return <pixiGraphics draw={draw} x={position.x} y={position.y} />;
+}
+
+export default function Sandbox() {
+  const { user, match } = useWallet();
+
+  const [ws, setWs] = useState(null);
+  const [id, setId] = useState(null);
+  const [map, setMap] = useState([]);
+  const [players, setPlayers] = useState({});
+  const [lastAcks, setLastAcks] = useState({});
+  const [viewport, setViewport] = useState({ width: 800, height: 600 });
+
+  const myIdRef = useRef(null);
+
+  // Fullscreen resize
+  useEffect(() => {
+    const handleResize = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    };
+
+    handleResize(); // set once
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Conexão WebSocket
+  useEffect(() => {
+    if (!match?.hash) return;
+
+    const socket = new WebSocket("ws://localhost:8080");
+    setWs(socket);
+
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ type: "join", match: match.hash }));
+    };
+
+    socket.onmessage = (msg) => {
+      const data = JSON.parse(msg.data);
+
+      if (data.type === "welcome") {
+        setId(data.id);
+        myIdRef.current = data.id;
+        setMap(data.map);
+      }
+
+      if (data.type === "snapshot") {
+        const newPlayers = {};
+        const newAcks = {};
+        data.players.forEach((p) => {
+          newPlayers[p.id] = { x: p.x, y: p.y };
+          newAcks[p.id] = p.lastProcessedInput;
+        });
+        setPlayers(newPlayers);
+        setLastAcks(newAcks);
+      }
+    };
+
+    return () => socket.close();
+  }, [match]);
+
+  const drawPlatform = useCallback((g, { w, h }) => {
+    g.clear();
+    g.beginFill(0x3d6c49);
+    g.drawRect(-w / 2, -h / 2, w, h);
+    g.endFill();
+  }, []);
+
+  if (!match?.hash || !id) return <div>Conectando à sala...</div>;
 
   return (
-    <div className="w-full h-full flex justify-center items-center">
-      <Interface />
+    <Application
+      width={viewport.width}
+      height={viewport.height}
+      background={"#0a1120"}
+    >
+      {/* Centro da tela é (0, 0) do mundo */}
+      <pixiContainer x={viewport.width / 2} y={viewport.height / 2}>
+        {map.map((p, i) => (
+          <pixiGraphics
+            key={i}
+            x={p.x}
+            y={p.y}
+            draw={(g) => drawPlatform(g, p)}
+          />
+        ))}
 
-      <Stage
-        width={dimensions.width}
-        height={dimensions.height}
-        style={{ background: "#0a1120" }}
-      >
-        <Layer offsetX={-dimensions.width / 2} offsetY={-dimensions.height / 2}>
-          <DebugGrid width={1000} height={1000} spacing={100} />
-          {/* Jogador */}
-          <Group x={playerPosRef.current.x} y={playerPosRef.current.y}>
-            {/* Imagem redonda com Circle (colide) */}
-            {user && user?.profile?.image != null && profileImg ? (
-              <Circle
-                x={0}
-                y={0}
-                radius={20}
-                fillPatternImage={profileImg}
-                fillPatternScale={{
-                  x: 40 / profileImg.width,
-                  y: 40 / profileImg.height,
-                }}
-                fillPatternOffset={{
-                  x: profileImg.width / 2,
-                  y: profileImg.height / 2,
-                }}
-              />
-            ) : (
-              <Circle x={0} y={0} radius={20} fill={"#b3e240"} />
-            )}
+        <PlayerBall
+          id={id}
+          isLocal
+          ws={ws}
+          map={map}
+          snapshot={players[id]}
+          lastAck={lastAcks[id]}
+        />
 
-            {/* Texto visual flutuando em cima */}
-            <Text
-              text="Player"
-              fontSize={12}
-              fill="white"
-              y={-40} // sobe 30px acima do centro do círculo
-              x={-20}
-              width={40}
-              align="center"
-              listening={false} // evita interação com mouse
+        {Object.entries(players).map(([pid, snap]) =>
+          pid === id ? null : (
+            <PlayerBall
+              key={pid}
+              id={pid}
+              isLocal={false}
+              ws={ws}
+              map={map}
+              snapshot={snap}
             />
-          </Group>
-          {/* Oponene */}
-          {Object.entries(opponentBodies.current).map(([userId, body]) => {
-            const meta = opponentsMeta.current[userId] || {};
-            return (
-              <Group key={userId} x={body.position.x} y={body.position.y}>
-                <DynamicImageComponent imageUrl={meta.image} />
-                <Text
-                  text={meta.name}
-                  fontSize={12}
-                  fill="white"
-                  y={-40}
-                  x={-20}
-                  width={40}
-                  align="center"
-                  listening={false}
-                />
-              </Group>
-            );
-          })}
-          {/* Plataformas desenhadas */}
-          {match
-            ? match?.map?.platforms?.map((p, i) => (
-                <Rect
-                  key={i}
-                  x={p.x}
-                  y={p.y}
-                  width={p.width}
-                  height={p.height}
-                  fill={p.color}
-                />
-              ))
-            : defaultMaps[0]?.platforms?.map((p, i) => (
-                <Rect
-                  key={i}
-                  x={p.x}
-                  y={p.y}
-                  width={p.width}
-                  height={p.height}
-                  fill={p.color}
-                />
-              ))}
-        </Layer>
-      </Stage>
-    </div>
+          )
+        )}
+      </pixiContainer>
+    </Application>
   );
 }

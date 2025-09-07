@@ -21,7 +21,9 @@ export function WalletProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [token, setToken] = useState(null);
-  const [match, setMatch] = useState(null);
+  const [match, setMatch] = useState({
+    hash: "lobby"
+  });
   const [balance, setBalance] = useState(0);
   
 
