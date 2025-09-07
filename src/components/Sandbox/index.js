@@ -222,6 +222,7 @@ export default function Sandbox() {
   const myIdRef = useRef(null);
 
   useEffect(() => {
+    if(user === null || ws !== null) return;
     const socket = new WebSocket("ws://localhost:8080");
     setWs(socket);
 
@@ -249,7 +250,7 @@ export default function Sandbox() {
     };
 
     return () => socket.close();
-  }, []);
+  }, [user]);
 
   const drawPlatform = useCallback((g, { w, h }) => {
     g.clear();
@@ -258,7 +259,6 @@ export default function Sandbox() {
     g.endFill();
   }, []);
 
-  if (!id) return <div>Conectando...</div>;
 
   return (
     <Application width={WIDTH} height={HEIGHT} background={"#0a1120"}>

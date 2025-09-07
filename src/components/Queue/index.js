@@ -7,16 +7,25 @@ import searching from "../../loading.gif";
 
 export default function QueueButtons() {
   const [status, setStatus] = useState("category"); // category | idle | searching | found
-  const { setMatch, match } = useWallet();
+  const { setMatch, match, user } = useWallet();
 
-  useEffect(()=>{
-    if(status == "searching" && match != null) {
-        setStatus("found")
+  useEffect(() => {
+    if (status == "searching" && match != null) {
+      setStatus("found");
     }
-  },[match])
+  }, [match]);
 
   const handleFindMatch = async () => {
     setStatus("searching");
+
+    if (user?.name == "guest") {
+      console.log({dev1: user})
+      setMatch({
+        hash: "lobby",
+      });
+      setStatus("game")
+      return;
+    }
     try {
       const userId = "user-" + crypto.randomUUID(); // trocar pelo ID real do usuário logado
       const { match, channel } = await findOrCreateMatch(userId, setMatch);
@@ -74,9 +83,9 @@ export default function QueueButtons() {
                     Instructions
                   </h4>
                   <p className="text-white opacity-0 group-hover:opacity-100">
-                    8 players and one champion! The champion gain 4x your ticket!
+                    8 players and one champion! The champion gain 4x your
+                    ticket!
                   </p>
-                  
                 </div>
               </div>
               <p className="text-3xl font-bold text-gray-200">Battle</p>
@@ -95,9 +104,9 @@ export default function QueueButtons() {
                     Instructions
                   </h4>
                   <p className="text-white opacity-0 group-hover:opacity-100">
-                    8 players and one champion! The champion gain 4x your ticket!
+                    8 players and one champion! The champion gain 4x your
+                    ticket!
                   </p>
-                  
                 </div>
               </div>
               <p className="text-3xl font-bold text-gray-200">Racer</p>
@@ -116,12 +125,12 @@ export default function QueueButtons() {
                     Instructions
                   </h4>
                   <p className="text-white opacity-0 group-hover:opacity-100">
-                    8 players and one champion! The champion gain 4x your ticket!
+                    8 players and one champion! The champion gain 4x your
+                    ticket!
                   </p>
-                  
                 </div>
               </div>
-              <p className="text-3xl font-bold text-gray-200">Arena</p>
+              <p className="text-3xl font-bold text-gray-200">Zipline</p>
             </div>
           </div>
         </div>
@@ -154,10 +163,7 @@ export default function QueueButtons() {
           </h1>
           <div className="flex justify-center items-center flex-col gap-2">
             <img src={searching.src} />
-            <p className="text-white text-xl font-semibold">
-              {" "}
-              Match Found!
-            </p>
+            <p className="text-white text-xl font-semibold"> Match Found!</p>
           </div>
         </div>
       )}

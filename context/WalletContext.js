@@ -21,9 +21,7 @@ export function WalletProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [token, setToken] = useState(null);
-  const [match, setMatch] = useState({
-    hash: "lobby"
-  });
+  const [match, setMatch] = useState(null);
   const [balance, setBalance] = useState(0);
   
 
@@ -189,7 +187,7 @@ export function WalletProvider({ children }) {
 
   return (
     <WalletContext.Provider
-      value={{ walletData, setWalletData, disconnectWallet, user, token , balance, match, setMatch}}
+      value={{ walletData, setWalletData, disconnectWallet, user, token , balance, match, setMatch, setUser}}
     >
       {children}
     </WalletContext.Provider>
