@@ -31,7 +31,9 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck }) {
       g.drawCircle(0, 0, 20);
       g.endFill();
     }, []);
-    return <pixiGraphics draw={draw} x={snapshot?.x ?? 0} y={snapshot?.y ?? 0} />;
+    return (
+      <pixiGraphics draw={draw} x={snapshot?.x ?? 0} y={snapshot?.y ?? 0} />
+    );
   }
 
   useEffect(() => {
@@ -73,16 +75,17 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck }) {
   }, [map]);
 
   const applyInput = useCallback((body, input) => {
-    const force = 0.0008;
-    const jumpForce = -0.04;
+  const force = 0.0008;
+  const jumpForce = -0.04;
 
-    if (input.keys.a) Body.applyForce(body, body.position, { x: -force, y: 0 });
-    if (input.keys.d) Body.applyForce(body, body.position, { x: force, y: 0 });
-    if (input.keys.w && canJumpRef.current) {
-      Body.applyForce(body, body.position, { x: 0, y: jumpForce });
-      canJumpRef.current = false;
-    }
-  }, []);
+  if (input.keys.a) Body.applyForce(body, body.position, { x: -force, y: 0 });
+  if (input.keys.d) Body.applyForce(body, body.position, { x: force, y: 0 });
+
+  if (input.keys.w && input.canJump) {
+    Body.applyForce(body, body.position, { x: 0, y: jumpForce });
+    input.canJump = false;
+  }
+}, []);
 
   // Prediction + envio de input
   useTick(() => {
@@ -124,24 +127,81 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck }) {
   useEffect(() => {
     if (!snapshot || !bodyRef.current || lastAck == null) return;
 
-    // Corrige a posição com o snapshot do servidor
-    Body.setPosition(bodyRef.current, { x: snapshot.x, y: snapshot.y });
-    myPosRef.current = { x: snapshot.x, y: snapshot.y };
-
-    // Remove os inputs já processados pelo servidor
-    inputBufferRef.current = inputBufferRef.current.filter(
+    const inputsToReplay = inputBufferRef.current.filter(
       (input) => input.timestamp > lastAck
     );
 
-    // Re-simula os inputs restantes
-    inputBufferRef.current.forEach((input) => {
-      applyInput(bodyRef.current, input);
+    // Criar engine temporário
+    const simEngine = Engine.create();
+    const simRunner = Runner.create();
+
+    // Clonar corpo do jogador com a posição do snapshot
+    const clonedBody = Bodies.circle(snapshot.x, snapshot.y, 20, {
+      restitution: 0,
+      friction: 0.05,
     });
 
-    // Atualiza posição exibida após re-simulação
-    const pos = bodyRef.current.position;
-    setPosition({ x: pos.x, y: pos.y });
-  }, [snapshot, lastAck, applyInput]);
+    // Copiar velocidade se desejar (opcional)
+    // Body.setVelocity(clonedBody, { x: 0, y: 0 });
+
+    // Clonar plataformas
+    const clonedPlatforms = map.map((p) =>
+      Bodies.rectangle(p.x, p.y, p.w, p.h, { isStatic: true })
+    );
+
+    // Adiciona tudo ao mundo simulado
+    Composite.add(simEngine.world, [clonedBody, ...clonedPlatforms]);
+
+    // Prepara canJump local
+    let canJump = false;
+
+    // Simula colisão no mundo temporário
+    Events.on(simEngine, "collisionStart", (e) => {
+      e.pairs.forEach((pair) => {
+        if (pair.bodyA === clonedBody || pair.bodyB === clonedBody) {
+          canJump = true;
+        }
+      });
+    });
+
+    // Simula cada input, um frame de cada vez (60fps)
+    for (const input of inputsToReplay) {
+      // Aplica input
+      const tempPlayer = {
+        body: clonedBody,
+        canJump,
+      };
+
+      applyInput(tempPlayer.body, {
+        ...input,
+        keys: input.keys,
+        canJump: tempPlayer.canJump,
+      });
+
+      Engine.update(simEngine, 1000 / 60); // 60 FPS
+    }
+
+    // Atualiza posição real com resultado da simulação
+    Body.setPosition(bodyRef.current, {
+      x: clonedBody.position.x,
+      y: clonedBody.position.y,
+    });
+    Body.setVelocity(bodyRef.current, clonedBody.velocity);
+
+    // Atualiza estado
+    setPosition({
+      x: clonedBody.position.x,
+      y: clonedBody.position.y,
+    });
+
+    myPosRef.current = {
+      x: clonedBody.position.x,
+      y: clonedBody.position.y,
+    };
+
+    // Mantém apenas inputs não processados
+    inputBufferRef.current = inputsToReplay;
+  }, [snapshot, lastAck, applyInput, map]);
 
   const draw = useCallback((g) => {
     g.clear();
@@ -205,7 +265,12 @@ export default function Sandbox() {
       <pixiContainer x={WIDTH / 2} y={HEIGHT / 2}>
         {/* Plataformas */}
         {map.map((p, i) => (
-          <pixiGraphics key={i} x={p.x} y={p.y} draw={(g) => drawPlatform(g, p)} />
+          <pixiGraphics
+            key={i}
+            x={p.x}
+            y={p.y}
+            draw={(g) => drawPlatform(g, p)}
+          />
         ))}
 
         {/* Jogador local */}
