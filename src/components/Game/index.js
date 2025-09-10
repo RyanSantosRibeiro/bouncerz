@@ -377,10 +377,10 @@ export default function Sandbox() {
     if (user === null || ws !== null || !match?.hash) return;
 
     // Railway
-    const socket = new WebSocket("ws://localhost:8080");
-    // const socket = new WebSocket(
-    //   "ws://bouncerz-server-production.up.railway.app"
-    // );
+    // const socket = new WebSocket("ws://localhost:8080");
+    const socket = new WebSocket(
+      "ws://bouncerz-server-production.up.railway.app"
+    );
     // const socket = new WebSocket("wss://bouncerz-server.onrender.com");
     // const socket = new WebSocket("ws://127.0.0.1:54321/functions/v1/bouncerz-server");
     console.log("🔌 Conectando ao WebSocket...", socket);
