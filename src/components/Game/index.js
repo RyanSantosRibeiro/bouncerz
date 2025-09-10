@@ -14,7 +14,11 @@ const IMPACT_THRESHOLD = 6; // velocidade mínima para reação de impacto
 const IMPACT_FORCE = 0.01; // força aplicada ao quique entre bolas
 const RIGID_MIN_DURATION = 300; // tempo mínimo ativo após soltar
 
-extend({ Container, Graphics });
+extend({ Container, Graphics, Text });
+
+function hexTo0x(hex) {
+  return hex?.replace("#", "0x");
+}
 
 function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck, status }) {
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -27,13 +31,16 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck, status }) {
   const canJumpRef = useRef(false);
   const [isRigid, setIsRigid] = useState(false);
   const rigidReleaseTimerRef = useRef(0); // ms
-  
+  const lastReconciliationTimeRef = useRef(0);
+
   // REMOTE PLAYER
   if (!isLocal) {
     const draw = useCallback(
       (g) => {
         g.clear();
-        g.beginFill(snapshot?.alive ? 0x40a0f0 : 0x666666); // morto = cinza
+        g.beginFill(
+          snapshot?.alive ? hexTo0x(snapshot?.color) || 0x40a0f0 : 0x666666
+        ); // morto = cinza
         g.lineStyle(2, snapshot?.isRigid ? 0x000000 : 0x40a0f0, 1);
         g.drawCircle(0, 0, 20);
         g.endFill();
@@ -41,7 +48,16 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck, status }) {
       [snapshot?.alive]
     );
     return (
-      <pixiGraphics draw={draw} x={snapshot?.x ?? 0} y={snapshot?.y ?? 0} />
+      <>
+        <pixiGraphics draw={draw} x={snapshot?.x ?? 0} y={snapshot?.y ?? 0} />
+        <pixiText
+          text={snapshot?.username ?? ""}
+          x={snapshot?.x ?? 0}
+          y={(snapshot?.y ?? 0) - 30} // sobe o texto 30px acima do círculo
+          anchor={0.5} // centraliza horizontalmente
+          style={{ fill: 0xffffff, fontSize: 14, fontWeight: "bold" }}
+        />
+      </>
     );
   }
 
@@ -141,7 +157,7 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck, status }) {
       keys: {
         a: keysRef.current["a"],
         d: keysRef.current["d"],
-        w: keysRef.current["w"] && canJumpRef.current,
+        w: keysRef.current["w"],
         space: keysRef.current["space"] || false,
       },
       timestamp: now,
@@ -170,8 +186,13 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck, status }) {
     ws?.send(JSON.stringify(payload));
 
     const pos = body.position;
-    setPosition({ x: pos.x, y: pos.y });
-    myPosRef.current = { x: pos.x, y: pos.y };
+    // setPosition({ x: pos.x, y: pos.y });
+    // myPosRef.current = { x: pos.x, y: pos.y };
+
+    if (snapshot) {
+      setPosition({ x: snapshot.x, y: snapshot.y });
+      myPosRef.current = { x: snapshot.x, y: snapshot.y };
+    }
 
     if (Math.abs(pos.y) > 1000) {
       Body.setPosition(body, { x: 0, y: 0 });
@@ -183,9 +204,27 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck, status }) {
   useEffect(() => {
     if (!snapshot || !bodyRef.current || lastAck == null) return;
 
+    const now = Date.now();
+    const minInterval = 100; // só reconcilia a cada 100ms
+
+    if (now - lastReconciliationTimeRef.current < minInterval) {
+      return;
+    }
+    console.log(
+      "Tempo desde última reconciliação:",
+      now - lastReconciliationTimeRef.current,
+      "ms"
+    );
+
     const inputsToReplay = inputBufferRef.current.filter(
       (input) => input.timestamp > lastAck
     );
+
+    if (inputsToReplay.length === 0) {
+      // Nenhum input novo foi processado desde o snapshot
+      // Melhor não reconciliar ainda — estamos em espera
+      return;
+    }
 
     const simEngine = Engine.create();
     const clonedBody = Bodies.circle(snapshot.x, snapshot.y, 20, {
@@ -217,11 +256,35 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck, status }) {
       Engine.update(simEngine, 1000 / 60);
     }
 
-    Body.setPosition(bodyRef.current, clonedBody.position);
-    Body.setVelocity(bodyRef.current, clonedBody.velocity);
+    // Reconciliação suave
+    const body = bodyRef.current;
+    const dx = clonedBody.position.x - body.position.x;
+    const dy = clonedBody.position.y - body.position.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
 
-    setPosition({ x: clonedBody.position.x, y: clonedBody.position.y });
-    myPosRef.current = { x: clonedBody.position.x, y: clonedBody.position.y };
+    const SNAP_THRESHOLD = 80;
+    const LERP_THRESHOLD = 10;
+    // console.log("Reconciliando... distância =", distance);
+    if (distance > SNAP_THRESHOLD) {
+      // Snap se completamente fora do eixo
+      Body.setPosition(body, clonedBody.position);
+      Body.setVelocity(body, clonedBody.velocity);
+    } else if (distance > LERP_THRESHOLD) {
+      // Interpolação suave se diferença moderada
+      const lerpFactor = 0.1; // menor = mais suave
+      const newX = body.position.x + dx * lerpFactor;
+      const newY = body.position.y + dy * lerpFactor;
+
+      Body.setPosition(body, { x: newX, y: newY });
+      Body.setVelocity(body, {
+        x:
+          body.velocity.x +
+          (clonedBody.velocity.x - body.velocity.x) * lerpFactor,
+        y:
+          body.velocity.y +
+          (clonedBody.velocity.y - body.velocity.y) * lerpFactor,
+      });
+    }
 
     inputBufferRef.current = inputsToReplay;
   }, [snapshot, lastAck, applyInput, map]);
@@ -237,12 +300,38 @@ function PlayerBall({ id, isLocal, ws, map, snapshot, lastAck, status }) {
     [snapshot?.alive, isRigid]
   );
 
-  return <pixiGraphics draw={draw} x={position.x} y={position.y} />;
+  return (
+    <>
+      {/* Local (interpolado / reconciliado) */}
+      <pixiGraphics draw={draw} x={position.x} y={position.y} />
+      <pixiText
+          text={snapshot?.username ?? "Local"}
+          x={snapshot?.x ?? 0}
+          y={(snapshot?.y ?? 0) - 30} // sobe o texto 30px acima do círculo
+          anchor={0.5} // centraliza horizontalmente
+          style={{ fill: 0xffffff, fontSize: 14, fontWeight: "bold" }}
+        />
+
+      {/* Snapshot do servidor - DEBUG */}
+      <pixiGraphics
+        draw={(g) => {
+          g.clear();
+          // g.lineStyle(2, 0xff0000, 1); // contorno vermelho
+          g.beginFill(0x000000, 0); // preenchimento transparente
+          g.drawCircle(0, 0, 20);
+          g.endFill();
+        }}
+        x={snapshot?.x ?? 0}
+        y={snapshot?.y ?? 0}
+      />
+    </>
+  );
 }
 
 export default function Sandbox() {
   const { match, user } = useWallet();
   const [ws, setWs] = useState(null);
+  const [ping, setPing] = useState(0);
   const [id, setId] = useState(null);
   const [map, setMap] = useState([
     { x: 0, y: 290, w: 800, h: 20 },
@@ -287,11 +376,18 @@ export default function Sandbox() {
     });
     if (user === null || ws !== null || !match?.hash) return;
 
+    // Railway
     const socket = new WebSocket("ws://localhost:8080");
+    // const socket = new WebSocket(
+    //   "ws://bouncerz-server-production.up.railway.app"
+    // );
+    // const socket = new WebSocket("wss://bouncerz-server.onrender.com");
+    // const socket = new WebSocket("ws://127.0.0.1:54321/functions/v1/bouncerz-server");
+    console.log("🔌 Conectando ao WebSocket...", socket);
     setWs(socket);
 
     socket.onopen = () => {
-      socket.send(JSON.stringify({ type: "join", match: match.hash }));
+      socket.send(JSON.stringify({ type: "join", match: match.hash, user }));
     };
 
     socket.onmessage = (msg) => {
@@ -308,9 +404,9 @@ export default function Sandbox() {
           break;
 
         case "snapshot":
+          console.log("📥 [snapshot]", data);
           const newPlayers = {};
           const newAcks = {};
-          console.log(data.players);
           data.players.forEach((p) => {
             newPlayers[p.id] = {
               x: p.x,
@@ -318,6 +414,8 @@ export default function Sandbox() {
               alive: p.alive,
               score: p.score,
               isRigid: p.isRigid || false,
+              color: p.color || "#40a0f0",
+              username: p.username || p.id,
             };
             newAcks[p.id] = p.lastProcessedInput;
           });
@@ -365,6 +463,14 @@ export default function Sandbox() {
           setStatus({ type: "matchWinner", data: data.winner });
           break;
 
+        case "pongTest":
+          const now = Date.now();
+          const rtt = now - data.clientTime; // ida + volta
+          const oneWay = rtt / 2; // latência aproximada
+          console.log(`📡 Now: ${now}ms - Server: ${data.clientTime}ms`);
+          console.log(`📡 Ping: ${oneWay}ms`);
+          setPing(oneWay);
+          break;
         default:
           console.log("📨 Mensagem desconhecida:", data);
       }
@@ -372,6 +478,19 @@ export default function Sandbox() {
 
     return () => socket.close();
   }, [user, match]);
+
+  function sendPing() {
+    const now = Date.now();
+    console.log("Ping enviado:", now);
+    ws.send(JSON.stringify({ type: "pingTest", time: now }));
+  }
+
+  useEffect(() => {
+    if (!ws) return;
+
+    const interval = setInterval(sendPing, 3000);
+    return () => clearInterval(interval);
+  }, [ws]);
 
   const drawPlatform = useCallback((g, { w, h }) => {
     g.clear();
@@ -388,6 +507,13 @@ export default function Sandbox() {
     <div>
       <Interface />
       <GameStatus status={status} />
+      {status.type === "game" ? (
+        <div className="fixed top-3 right-3 text-emerald-600 border border-emerald-600 bg-emerald-200 p-2 rounded-2xl text-xs font-semibold">
+          Ping: {ping} ms
+        </div>
+      ) : (
+        <></>
+      )}
       {/* HUD */}
       <div
         style={{
@@ -399,12 +525,12 @@ export default function Sandbox() {
           fontFamily: "monospace",
         }}
       >
-        <div>Rodada: {round}</div>
+        <div>Round: {round}</div>
         <div>
           Placar:
           {Object.entries(scores).map(([pid, pts]) => (
             <div key={pid}>
-              {pid === id ? "Você" : pid}: {pts}
+              {pid === id ? "You" : players?.[pid]?.username}: {pts}
             </div>
           ))}
         </div>

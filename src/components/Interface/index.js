@@ -6,6 +6,8 @@ import Modal from "../Modal/Modal";
 import WalletConnect from "../Wallet";
 import logo from "../../logo.png";
 import QueueButtons from "../Queue";
+import getRandomCryptoNameAndColor from "./../../../utils/randomNameColor"
+import { v4 as uuidv4 } from "uuid";
 export default function Interface() {
   const { user, balance, match, setUser } = useWallet();
   const [status, setStatus] = useState("initial"); // category | idle | searching | found
@@ -32,7 +34,11 @@ export default function Interface() {
                 Connect your wallet to play
               </p>
               <p
-                onClick={() => setUser({name: "guest"})}
+                onClick={() => {
+                  let playerId = uuidv4();
+                  const {randomName, randomColor} = getRandomCryptoNameAndColor();
+                  setUser({id: playerId, name: "guest", profile:{username: randomName, color: randomColor}})
+                }}
                 className="btn btn-secondary hover:opacity-60 text-white rounded"
               >
                 Play as guest

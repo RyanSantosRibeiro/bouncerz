@@ -246,9 +246,10 @@ export const login = async (address, signature, publicKey, walletType) => {
         },
         body: JSON.stringify(odinAuthData)
       });
-
-      const odinAuthResult = await odinAuthResponse.json();
-      console.log('2. Odin Auth response:', odinAuthResult);
+      
+      console.log('1.5. Odin Auth response:', odinAuthResponse);
+      const odinAuthResult = await odinAuthResponse?.json();
+      console.log('2. Odin Auth data:', odinAuthResult);
 
       return {
         data: {
