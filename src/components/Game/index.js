@@ -379,7 +379,7 @@ export default function Sandbox() {
     // Railway
     // const socket = new WebSocket("ws://localhost:8080");
     const socket = new WebSocket(
-      "ws://bouncerz-server-production.up.railway.app"
+      "wss://bouncerz-server-production.up.railway.app"
     );
     // const socket = new WebSocket("wss://bouncerz-server.onrender.com");
     // const socket = new WebSocket("ws://127.0.0.1:54321/functions/v1/bouncerz-server");
