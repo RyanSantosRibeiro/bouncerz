@@ -1,4 +1,4 @@
-// deno run --allow-net server.ts
+// @ts-ignore
 import * as Matter from "npm:matter-js@0.19.0";
 
 const { Engine, Events, Runner, Composite, Body, Bodies } = Matter.default;
@@ -70,7 +70,9 @@ function createRoom(roomId) {
 
       // ⚡ Reação entre jogadores
       const bodies = Object.values(room.players)
-        .filter((p) => p.alive)
+      // @ts-ignore
+      .filter((p) => p.alive)
+      // @ts-ignore
         .map((p) => p.body);
 
       const isPlayerBody = (b) => bodies.includes(b);
@@ -89,6 +91,7 @@ function createRoom(roomId) {
 
           const playersByBody = Object.entries(room.players).reduce(
             (acc, [pid, p]) => {
+              // @ts-ignore
               acc[p.body.id] = p;
               return acc;
             },
@@ -275,7 +278,7 @@ function tickRoom(roomId) {
       console.log(`💀 Player ${id} caiu`);
     }
   }
-
+// @ts-ignore
   const alivePlayers = Object.entries(players).filter(([_, p]) => p.alive);
   if (alivePlayers.length === 1) {
     const [winnerId] = alivePlayers[0];
@@ -288,10 +291,15 @@ function tickRoom(roomId) {
 
   const snapshot = Object.entries(players).map(([id, p]) => ({
     id,
+    // @ts-ignore
     x: p.body.position.x,
+    // @ts-ignore
     y: p.body.position.y,
+    // @ts-ignore
     alive: p.alive,
+    // @ts-ignore
     lastProcessedInput: p.lastProcessedInput ?? 0,
+    // @ts-ignore
     isRigid: p.isRigid, // << NOVO
   }));
 
@@ -334,7 +342,7 @@ function cleanupOldRooms() {
     }
   }
 }
-
+// @ts-ignore
 Deno.serve(async (req: Request): Promise<Response> => {
   const { pathname } = new URL(req.url);
 
@@ -353,7 +361,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (upgrade.toLowerCase() != "websocket") {
     return new Response("Not a WebSocket request", { status: 400 });
   }
-
+// @ts-ignore
   const { socket, response } = Deno.upgradeWebSocket(req);
 
   let playerId = crypto.randomUUID();
