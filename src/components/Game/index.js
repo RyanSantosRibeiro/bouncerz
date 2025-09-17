@@ -527,7 +527,7 @@ export default function Sandbox() {
       >
         <div>Round: {round}</div>
         <div>
-          Placar:
+          Score:
           {Object.entries(scores).map(([pid, pts]) => (
             <div key={pid}>
               {pid === id ? "You" : players?.[pid]?.username}: {pts}

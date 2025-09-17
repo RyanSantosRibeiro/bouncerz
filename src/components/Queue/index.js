@@ -66,7 +66,7 @@ export default function QueueButtons() {
       {status === "category" && (
         <div className="card-body gap-4 flex flex-col hHGuuM">
           <h1 className="border-base-300  text-white font-bold text-center text-3xl">
-            Bouncerz
+            Sandbox Test
           </h1>
           <div className="w-full grid grid-cols-3 gap-3">
             <div
@@ -91,8 +91,8 @@ export default function QueueButtons() {
               <p className="text-3xl font-bold text-gray-200">Battle</p>
             </div>
             <div
-              onClick={() => setStatus("searching")}
-              className="relative w-full flex flex-col justify-center items-center max-w-[200px] cursor-pointer gap-2"
+              // onClick={() => setStatus("searching")}
+              className="relative w-full flex flex-col justify-center items-center max-w-[200px] cursor-default gap-2 opacity-30"
             >
               <div className="relative w-full h-full flex gap-2 justify-center items-center flex-col">
                 <img
@@ -112,8 +112,8 @@ export default function QueueButtons() {
               <p className="text-3xl font-bold text-gray-200">Racer</p>
             </div>
             <div
-              onClick={() => setStatus("searching")}
-              className="relative w-full flex flex-col justify-center items-center max-w-[200px] cursor-pointer gap-2"
+              // onClick={() => setStatus("searching")}
+              className="relative w-full flex flex-col justify-center items-center max-w-[200px] cursor-default gap-2 opacity-30"
             >
               <div className="relative w-full h-full flex gap-2 justify-center items-center flex-col">
                 <img
